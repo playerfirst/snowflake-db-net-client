@@ -15,7 +15,7 @@ namespace Snowflake.Client
             ChunkUrl = chunkUrl;
             ChunkIndex = chunkIndex;
             ChunkRowSet = chunkRowSet;
-            ChunkName = chunkUrl.Segments.Length >= 5 ? chunkUrl.Segments[5] : "Unknown";
+            ChunkName = "Unknown";
         }
 
         public override string ToString()

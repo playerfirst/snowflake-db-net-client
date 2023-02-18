@@ -28,7 +28,7 @@ namespace Snowflake.Client
         {
             var httpClientHandler = new HttpClientHandler
             {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+                AutomaticDecompression = DecompressionMethods.None
             };
 
             Client = new HttpClient(httpClientHandler)
@@ -56,7 +56,8 @@ namespace Snowflake.Client
                 {
                     var chunkRowSet = await GetChunkContentAsync(request, ct).ConfigureAwait(false);
                     var chunkIndex = Array.IndexOf(downloadRequests, request);
-                    downloadedChunks.Add(new DownloadedChunkRowSet(request.RequestUri, chunkIndex, chunkRowSet));
+                    var rowSet = new DownloadedChunkRowSet(request.RequestUri, chunkIndex, chunkRowSet);
+                    downloadedChunks.Add(rowSet);
                 }, _prefetchThreadsCount)
                 .ConfigureAwait(false);
 
@@ -112,25 +113,18 @@ namespace Snowflake.Client
 
                 using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
                 {
-                    var concatStream = BuildDeserializableStream(stream);
-                    return await JsonSerializer.DeserializeAsync<List<List<string>>>(concatStream, cancellationToken: ct).ConfigureAwait(false);
+                    var gzip = new System.IO.Compression.GZipStream(
+                        stream, System.IO.Compression.CompressionMode.Decompress);
+
+                    var decompressed = new MemoryStream();
+                    gzip.CopyTo(decompressed);
+                    decompressed.Position = 0;
+                    var reader = new StreamReader(decompressed);
+                    var streamText = reader.ReadToEnd();
+
+                    return JsonSerializer.Deserialize<List<List<string>>>($"[{streamText}]");
                 }
             }
-        }
-
-        /// <summary>
-        /// Content from AWS S3 in format of 
-        ///     ["val1", "val2", null, ...],
-        ///     ["val3", "val4", null, ...],
-        ///     ...
-        /// To parse it as a json (array of strings), we need to pre-append '[' and append ']' to the stream 
-        /// </summary>
-        private static Stream BuildDeserializableStream(Stream content)
-        {
-            Stream openBracket = new MemoryStream(Encoding.UTF8.GetBytes("["));
-            Stream closeBracket = new MemoryStream(Encoding.UTF8.GetBytes("]"));
-
-            return new ConcatenatedStream(new Stream[] { openBracket, content, closeBracket });
         }
     }
 
